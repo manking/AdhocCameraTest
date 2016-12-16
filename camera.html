@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
+  <script src="constants.js"></script>
+  <title>Simple Camera</title>
+</head>
+
+<body>
+  <form id="control"></form>
+  <div>
+    <img id="capture_image"/>
+    <canvas id="capture_canvas" style="display:none;"></canvas>
+  </div>
+  <div>
+    <video id="video"></video>
+  </div>
+  <script>
+    var video = document.getElementById("video");
+    var control = document.getElementById("control");
+    var capture_canvas = document.getElementById("capture_canvas");
+    var canvas2d = capture_canvas.getContext('2d');
+    var capture_image = document.getElementById("capture_image");
+    var params = getQueryString();
+
+    video.addEventListener("loadedmetadata",function (e){
+        capture_canvas.width = capture_image.width = video.videoWidth;
+        capture_canvas.height = capture_image.height = video.videoHeight;
+    });
+
+    getVideoSources(function(cam) {
+      console.log("cam", cam);
+      var b = document.createElement("input");
+      b.type = "button";
+      b.value = "Start Capture from [" + cam.name + "]";
+      b.onclick = getMain(cam.id);
+      control.appendChild(b);
+      console.log('add button');
+    });
+
+    function getMain(cam_id) {
+      return function() {
+        main(cam_id);
+      };
+    }
+
+    function main(cam_id) {
+      navigator.getUserMedia({
+        audio: false,
+        video: {
+          optional: [
+            { sourceId: cam_id}
+          ]
+        }
+      }, function(stream) { // success
+        localStream = stream;
+        video.src = URL.createObjectURL(stream);
+        video.play();
+        video.volume = 0;
+        captureImage();
+        setInterval(captureImage, 10 * 1000);
+      }, function(e) { // error
+        console.error("Error on start video: " + e.code);
+      });
+    };
+
+    var lastImagePath = "";
+    function captureImage() {
+        canvas2d.drawImage(video, 0, 0);
+
+        var dataUrl = capture_canvas.toDataURL('image/jpeg');
+        capture_image.src = dataUrl;
+
+        var bin = atob(dataUrl.split(',')[1]);
+        var buffer = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) {
+          buffer[i] = bin.charCodeAt(i);
+        }
+        var blob = new Blob([buffer.buffer], {type: 'image/jpeg'});
+
+        var onlineId = params.id;
+        var baseUrl = 'https://dl.dropboxusercontent.com/u/3757/adhocldp/';
+
+        var date = new Date();
+        var time = date.getTime();
+        var imageFile = onlineId + "_" + time + ".jpg";
+        var imageFilePath = '/Public/adhocldp/' + imageFile;
+        uploadFile(imageFilePath, blob);
+        
+        var manifest = '{ "path":"' + baseUrl + imageFile + '"}';
+        uploadFile('/Public/adhocldp/' + onlineId + '.json', manifest);
+        if (lastImagePath != "") {
+          deleteFile(lastImagePath);
+        }
+        lastImagePath = imageFilePath;
+    }
+    function uploadFile(path, contents) {
+      var ACCESS_TOKEN = params.token;
+      var dbx = new Dropbox({ accessToken: ACCESS_TOKEN });
+      var mode = {};
+      mode[".tag"] = 'overwrite';
+      dbx.filesUpload({path: path, contents: contents, mode: mode})
+        .then(function(response) {
+          console.log(response);
+        })
+        .catch(function(error) {
+          console.error(error);
+        });
+    }
+    function deleteFile(path) {
+      var ACCESS_TOKEN = params.token;
+      var dbx = new Dropbox({ accessToken: ACCESS_TOKEN });
+      dbx.filesDelete({path: path})
+        .then(function(response) {
+          console.log(response);
+        })
+        .catch(function(error) {
+          console.error(error);
+        });
+    }
+    function getQueryString() {
+      if (1 < document.location.search.length) {
+          var query = document.location.search.substring(1);
+          var parameters = query.split('&');
+          var result = new Object();
+          for (var i = 0; i < parameters.length; i++) {
+              var element = parameters[i].split('=');
+              var paramName = decodeURIComponent(element[0]);
+              var paramValue = decodeURIComponent(element[1]);
+              result[paramName] = decodeURIComponent(paramValue);
+          }
+          return result;
+      }
+      return null;
+  }
+  </script>
+</body>
+
+</html>
